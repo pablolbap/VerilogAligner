@@ -3,7 +3,8 @@ import re
 
 from enum import Enum
 
-FILE = "test_file.txt"
+FILE         = "test_set/simple_1.sv"
+PREPROC_FILE = "test_set/simple_1__pre_proc.sv"
 
 PATTERN = ["//", "include", "assign"]
 
@@ -126,9 +127,10 @@ class AssignPasses(Enum):
 
 class DeclPasses(Enum):                # logic [x:y] something = value;
     # [x:y]>>__<<something OR logic>>___<<something
-    BRACKET_OR_KEYWORD_TO_SYMBOL = 0
-    SYMBOL_TO_EQUAL = 1     # something>>___<<=
-    LAST = 2
+    FIRST_SPACE = 0
+    BRACKET_OR_KEYWORD_TO_SYMBOL = 1
+    SYMBOL_TO_EQUAL = 2     # something>>___<<=
+    LAST = 3
 
 
 class CommentPasses(Enum):
@@ -150,7 +152,7 @@ class LineGroup:
         self.line_objects.append(line)
         line.group = self
 
-    def update_spaces(self, pass_num):
+    def update_spaces(self):
         pass
 
     def format(self):
@@ -202,13 +204,12 @@ class DeclGroup(LineGroup):
         self.spaces = [0 for _ in range(DeclPasses.LAST.value)]
         self.has_width_specifier = False
 
-    def update_spaces(self, pass_num):
-        if(pass_num == 0):
-            self.spaces[DeclPasses.BRACKET_OR_KEYWORD_TO_SYMBOL.value] = max(self.idx_of_furthest_matching_regex_in_group("\][\s]+(\w)"),
-                                                                                self.idx_of_furthest_matching_regex_in_group(KEYWORDS + "[\s]+(\w)"))  # TODO: Suboptimal
-        if(pass_num == 1):
-            self.spaces[DeclPasses.SYMBOL_TO_EQUAL.value] = self.idx_of_furthest_matching_regex_in_group(
-                "\w[\s]+(=)")
+    def update_spaces(self):
+        self.spaces[DeclPasses.BRACKET_OR_KEYWORD_TO_SYMBOL.value] = \
+            max(self.idx_of_furthest_matching_regex_in_group("\][\s]+(\w)"),
+                self.idx_of_furthest_matching_regex_in_group(KEYWORDS + "[\s]+(\w)"))  # TODO: Suboptimal
+        self.spaces[DeclPasses.SYMBOL_TO_EQUAL.value] = self.idx_of_furthest_matching_regex_in_group(
+            "\w[\s]+(=)")
 
 class Line:
     def __init__(self, text, line_number):
@@ -279,7 +280,7 @@ class Decl(Line):
                 return ["(\][\s]+)\w", "]" + self.group.spaces[DeclPasses.BRACKET_OR_KEYWORD_TO_SYMBOL.value] * " "]
             return [KEYWORDS + "[\s]+\w", "]" + self.group.spaces[DeclPasses.BRACKET_OR_KEYWORD_TO_SYMBOL.value] * " "]
         if(pass_num == 2):
-            return ["\w([\s]+=)", "]" + self.group.spaces[1] * " " + "= "]
+            return ["\w([\s]+=)", "]" + self.group.spaces[DeclPasses.SYMBOL_TO_EQUAL.value] * " " + "= "]
 
 
 class Grouper:
@@ -310,7 +311,7 @@ class Grouper:
 
 class Liner:
     def __init__(self, filename):
-        self.fd_r = open(FILE, "r")
+        self.fd_r = open(filename, "r")
         self.lines_list = self.fd_r.readlines()
         self.number_of_lines = len(self.lines_list)
         self.lines_object = []
@@ -368,16 +369,16 @@ class Liner:
                 self.grouper.add_to_group(line)
 
     
-def pre_proc(filename):
+def pre_proc(file_name, preproc_file_name):
     match_cmd   = "(?=[^;]*;[^;]*)((;)(?=))"
     replace_cmd = ";\n" 
     os.system("perl -p -e \"s/" + match_cmd + "/" +
-              replace_cmd + "/g\" " + "test_file.txt > pre_proc.txt")
+              replace_cmd + "/g\" " + file_name + " > " + preproc_file_name)
 
 
 if __name__ == "__main__":
-    pre_proc(FILE)
-    liner = Liner("pre_proc.txt")
+    pre_proc(FILE, PREPROC_FILE)
+    liner = Liner(PREPROC_FILE)
     liner.parse()
     liner.group_and_format()
 
