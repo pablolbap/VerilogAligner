@@ -152,6 +152,7 @@ class LineGroup:
         self.line_objects.append(line)
         line.group = self
 
+    # Virtual
     def update_spaces(self):
         pass
 
@@ -159,17 +160,20 @@ class LineGroup:
         for i in range(self.number_of_passes):
             for line in self.line_objects:
                 line.format(pass_num = i)
-            self.update_spaces(i)
+            self.update_spaces()
 
-    def idx_of_furthest_matching_regex_in_group(self, regex):
+    def update_spaces_regex_pass(self, regex, pass_num):
         res = -1
         for line in self.line_objects:
             idx = re.search(regex, line.text)
+            start = idx.start()
+            end   = idx.end()
             if(idx == None):
                 continue
-            if(idx.start() > res):
-                res = idx.start()
-        return res
+            if(start > res):
+                res = start
+            line.spaces[pass_num] = end - start
+        self.spaces[pass_num] = res
 
     def print_lines(self):
         for line in self.line_objects:
@@ -205,11 +209,12 @@ class DeclGroup(LineGroup):
         self.has_width_specifier = False
 
     def update_spaces(self):
-        self.spaces[DeclPasses.BRACKET_OR_KEYWORD_TO_SYMBOL.value] = \
-            max(self.idx_of_furthest_matching_regex_in_group("\][\s]+(\w)"),
-                self.idx_of_furthest_matching_regex_in_group(KEYWORDS + "[\s]+(\w)"))  # TODO: Suboptimal
-        self.spaces[DeclPasses.SYMBOL_TO_EQUAL.value] = self.idx_of_furthest_matching_regex_in_group(
-            "\w[\s]+(=)")
+        self.update_spaces_regex_pass("\][\s]+(\w)", 
+                                        DeclPasses.BRACKET_OR_KEYWORD_TO_SYMBOL.value)
+        self.update_spaces_regex_pass(KEYWORDS + "[\s]+(\w)", 
+                                        DeclPasses.BRACKET_OR_KEYWORD_TO_SYMBOL.value)
+        self.update_spaces_regex_pass("\w[\s]+(=)", 
+                                        DeclPasses.SYMBOL_TO_EQUAL.value)
 
 class Line:
     def __init__(self, text, line_number):
@@ -273,13 +278,13 @@ class Decl(Line):
             self.has_width_specifier = False
 
     def get_pass_regexp(self, pass_num):
-        if(pass_num == 0):
+        if(pass_num == DeclPasses.FIRST_SPACE.value):
             return [self.keyword_str + "[\s]+", self.keyword_str + " "]
-        if(pass_num == 1):
+        if(pass_num == DeclPasses.BRACKET_OR_KEYWORD_TO_SYMBOL.value):
             if (self.has_width_specifier):
                 return ["(\][\s]+)\w", "]" + self.group.spaces[DeclPasses.BRACKET_OR_KEYWORD_TO_SYMBOL.value] * " "]
             return [KEYWORDS + "[\s]+\w", "]" + self.group.spaces[DeclPasses.BRACKET_OR_KEYWORD_TO_SYMBOL.value] * " "]
-        if(pass_num == 2):
+        if(pass_num == DeclPasses.SYMBOL_TO_EQUAL.value):
             return ["\w([\s]+=)", "]" + self.group.spaces[DeclPasses.SYMBOL_TO_EQUAL.value] * " " + "= "]
 
 
