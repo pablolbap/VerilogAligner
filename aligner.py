@@ -163,17 +163,18 @@ class LineGroup:
             self.update_spaces()
 
     def update_spaces_regex_pass(self, regex, pass_num):
-        res = -1
+        res = [0,0]
         for line in self.line_objects:
             idx = re.search(regex, line.text)
-            start = idx.start()
-            end   = idx.end()
             if(idx == None):
                 continue
-            if(start > res):
-                res = start
-            line.spaces[pass_num] = end - start
-        self.spaces[pass_num] = res
+            start = idx.start()
+            end   = idx.end()
+            if(start > res[0]):
+                res = [start, end]
+        for line in self.line_objects:
+            if(res[0] > line.spaces[pass_num][0]):
+                line.spaces[pass_num] = res
 
     def print_lines(self):
         for line in self.line_objects:
@@ -213,7 +214,7 @@ class DeclGroup(LineGroup):
                                         DeclPasses.BRACKET_OR_KEYWORD_TO_SYMBOL.value)
         self.update_spaces_regex_pass(KEYWORDS + "[\s]+(\w)", 
                                         DeclPasses.BRACKET_OR_KEYWORD_TO_SYMBOL.value)
-        self.update_spaces_regex_pass("\w[\s]+(=)", 
+        self.update_spaces_regex_pass("(\w)[\s]+=", 
                                         DeclPasses.SYMBOL_TO_EQUAL.value)
 
 class Line:
@@ -233,7 +234,7 @@ class Line:
 class Comment(Line):
     def __init__(self, text, line_number):
         super(Comment, self).__init__(text, line_number)
-        self.spaces = [0 for _ in range(CommentPasses.LAST.value)]
+        self.spaces = [[0,0] for _ in range(CommentPasses.LAST.value)]
 
     def get_pass_regexp(self, pass_num):
         if(pass_num == 0):
@@ -248,7 +249,7 @@ class Empty(Line):
 class Include(Line):
     def __init__(self, text, line_number):
         super(Include, self).__init__(text, line_number)
-        self.spaces = [0 for _ in range(IncludePasses.LAST.value)]
+        self.spaces = [[0,0] for _ in range(IncludePasses.LAST.value)]
 
     def get_pass_regexp(self, pass_num):
         if(pass_num == 0):
@@ -258,34 +259,36 @@ class Include(Line):
 class Assign(Line):
     def __init__(self, text, line_number):
         super(Assign, self).__init__(text, line_number)
-        self.spaces = [0 for _ in range(AssignPasses.LAST.value)]
+        self.spaces = [[0,0] for _ in range(AssignPasses.LAST.value)]
 
     def get_pass_regexp(self, pass_num):
+        space = self.spaces[pass_num][1] - self.spaces[pass_num][0]
         if(pass_num == 0):
             return ["assign[\s]+", "assign "]
         if(pass_num == 1):
-            return ["[\s]+=[\s]+", self.group.spaces[AssignPasses.SYMBOL_TO_EQUAL.value]*" " + "= "]
+            return ["[\s]+=[\s]+", space * " " + "= "]
 
 
 class Decl(Line):
     def __init__(self, text, line_number, keyword_str):
         super(Decl, self).__init__(text, line_number)
         self.keyword_str = keyword_str
-        self.spaces = [0 for _ in range(DeclPasses.LAST.value)]
+        self.spaces = [[0,0] for _ in range(DeclPasses.LAST.value)]
         if(bool(re.search("\[", self.text))):
             self.has_width_specifier = True
         else:
             self.has_width_specifier = False
 
     def get_pass_regexp(self, pass_num):
+        space = self.spaces[pass_num][1] - self.spaces[pass_num][0]
         if(pass_num == DeclPasses.FIRST_SPACE.value):
             return [self.keyword_str + "[\s]+", self.keyword_str + " "]
         if(pass_num == DeclPasses.BRACKET_OR_KEYWORD_TO_SYMBOL.value):
             if (self.has_width_specifier):
-                return ["(\][\s]+)\w", "]" + self.group.spaces[DeclPasses.BRACKET_OR_KEYWORD_TO_SYMBOL.value] * " "]
-            return [KEYWORDS + "[\s]+\w", "]" + self.group.spaces[DeclPasses.BRACKET_OR_KEYWORD_TO_SYMBOL.value] * " "]
+                return ["(\][\s]+)(?=\w)", "]" + space * " "]
+            return ["(?=" + KEYWORDS + ")" + "[\s]+\w", space * " "]
         if(pass_num == DeclPasses.SYMBOL_TO_EQUAL.value):
-            return ["\w([\s]+=)", "]" + self.group.spaces[DeclPasses.SYMBOL_TO_EQUAL.value] * " " + "= "]
+            return ["(?=\w)([\s]+=)", space * " " + "= "]
 
 
 class Grouper:
@@ -325,9 +328,11 @@ class Liner:
     # def edit_line(self, line):
     #     self.lines_list[line.line_number] = line.format()
 
-    # def write_lines(self):
-    #     print(self.lines_list)
-    #     # self.fd_w.writelines(self.lines_list)
+    def write_lines(self):
+        for group in self.grouper.groups:
+            for line in group.line_objects: 
+                print(line.text)
+        # # self.fd_w.writelines(self.lines_list)
    
     def parse(self):
         for i in range(self.number_of_lines):
@@ -368,10 +373,13 @@ class Liner:
                 self.grouper.new_group(t)  
                 self.grouper.add_to_group(line)
             else:
+                if(t == "<class '__main__.Empty'>"):
+                    continue
                 if(t != self.grouper.current_type):
                     self.grouper.current_group().format()
                     self.grouper.new_group(t)  
                 self.grouper.add_to_group(line)
+        self.write_lines()
 
     
 def pre_proc(file_name, preproc_file_name):
